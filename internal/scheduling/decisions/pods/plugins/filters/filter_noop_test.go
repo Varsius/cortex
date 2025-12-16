@@ -1,7 +1,4 @@
-// Copyright 2025 SAP SE
-// SPDX-License-Identifier: Apache-2.0
-
-package pods
+package filters
 
 import (
 	"log/slog"
@@ -22,6 +19,7 @@ func TestNoopFilter_Run(t *testing.T) {
 			name: "empty nodes",
 			request: pods.PodPipelineRequest{
 				Nodes: []corev1.Node{},
+				Pod:   corev1.Pod{},
 			},
 			expected: map[string]float64{},
 		},
@@ -33,6 +31,7 @@ func TestNoopFilter_Run(t *testing.T) {
 						ObjectMeta: metav1.ObjectMeta{Name: "node1"},
 					},
 				},
+				Pod: corev1.Pod{},
 			},
 			expected: map[string]float64{
 				"node1": 1.0,
@@ -52,6 +51,7 @@ func TestNoopFilter_Run(t *testing.T) {
 						ObjectMeta: metav1.ObjectMeta{Name: "node3"},
 					},
 				},
+				Pod: corev1.Pod{},
 			},
 			expected: map[string]float64{
 				"node1": 1.0,
