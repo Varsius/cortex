@@ -18,6 +18,7 @@ rules:
   - steps
   - pipelines
   - kpis
+  - podgroupsets
   verbs:
   - create
   - delete
@@ -37,6 +38,7 @@ rules:
   - steps/finalizers
   - pipelines/finalizers
   - kpis/finalizers
+  - podgroupsets/finalizers
   verbs:
   - update
 - apiGroups:
@@ -50,6 +52,7 @@ rules:
   - steps/status
   - pipelines/status
   - kpis/status
+  - podgroupsets/status
   verbs:
   - get
   - patch
