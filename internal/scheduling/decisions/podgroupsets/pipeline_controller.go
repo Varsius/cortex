@@ -146,6 +146,8 @@ func (c *DecisionPipelineController) process(ctx context.Context, decision *v1al
 
 	if decision.Status.Result == nil {
 		// Find nodes
+		// TODO: TAS needs to be applied here.
+		// For each possible node combination, the pipeline needs to evalute possible placements.
 		nodes := &corev1.NodeList{}
 		if err := c.List(ctx, nodes); err != nil {
 			return err
@@ -203,6 +205,7 @@ func (c *DecisionPipelineController) process(ctx context.Context, decision *v1al
 					Spec: group.Spec.PodSpec,
 				}
 				// Bind
+				// TODO: use Bindings instead of patching the NodeName
 				pod.Spec.NodeName = nodeName
 
 				if err := c.Create(ctx, pod); err != nil {
@@ -234,11 +237,13 @@ func (c *DecisionPipelineController) handlePodGroupSet() handler.EventHandler {
 			}
 		},
 		UpdateFunc: func(ctx context.Context, evt event.UpdateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			newPodGroupSet := evt.ObjectNew.(*v1alpha1.PodGroupSet)
+			// TODO: Updating a PodGroupSet could become quite complicated depending on what attributes where patched.
+			// Since this is not trivial, this needs further consideration and a respective design.
+			/* newPodGroupSet := evt.ObjectNew.(*v1alpha1.PodGroupSet)
 			if err := c.ProcessNewPodGroupSet(ctx, newPodGroupSet); err != nil {
 				log := ctrl.LoggerFrom(ctx)
 				log.Error(err, "failed to process updated pgs", "pgs", newPodGroupSet.Name)
-			}
+			}*/
 		},
 		DeleteFunc: func(ctx context.Context, evt event.DeleteEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 			log := ctrl.LoggerFrom(ctx)
@@ -248,6 +253,7 @@ func (c *DecisionPipelineController) handlePodGroupSet() handler.EventHandler {
 				log.Error(err, "failed to list decisions for deleted podgroupset")
 				return
 			}
+			// TODO: the respective pods of a PodSetGroup also need to be deleted
 			for _, decision := range decisions.Items {
 				if decision.Spec.PodGroupSetRef != nil &&
 					decision.Spec.PodGroupSetRef.Name == podgroupset.Name &&
