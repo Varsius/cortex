@@ -4,6 +4,8 @@
 package v1alpha1
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -39,6 +41,12 @@ type PodGroupSet struct {
 
 	Spec   PodGroupSetSpec   `json:"spec,omitempty"`
 	Status PodGroupSetStatus `json:"status,omitempty"`
+}
+
+// PodGroupSet.PodName constructs a unique identifier for its pods that is used
+// in the mapping of potential placements.
+func (pgs PodGroupSet) PodName(podGroupName string, replicaIdx int) string {
+	return fmt.Sprintf("%s-%s-%d", pgs.Name, podGroupName, replicaIdx)
 }
 
 // +kubebuilder:object:root=true

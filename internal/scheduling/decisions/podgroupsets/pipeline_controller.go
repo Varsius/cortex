@@ -12,10 +12,10 @@ import (
 
 	"github.com/cobaltcore-dev/cortex/api/delegation/podgroupsets"
 	"github.com/cobaltcore-dev/cortex/api/v1alpha1"
+	"github.com/cobaltcore-dev/cortex/internal/scheduling/decisions/pods"
+	"github.com/cobaltcore-dev/cortex/internal/scheduling/lib"
 	"github.com/cobaltcore-dev/cortex/pkg/conf"
 	"github.com/cobaltcore-dev/cortex/pkg/multicluster"
-
-	"github.com/cobaltcore-dev/cortex/internal/scheduling/lib"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -129,6 +129,12 @@ func (c *DecisionPipelineController) process(ctx context.Context, decision *v1al
 	log := ctrl.LoggerFrom(ctx)
 	startedAt := time.Now()
 
+	// TODO: implement proper lifecycle management.
+	// For now, we do not touch PodSetGroups that are already running
+	if decision.Status.Result != nil {
+		return nil
+	}
+
 	pipeline, ok := c.Pipelines[decision.Spec.PipelineRef.Name]
 	if !ok {
 		log.Error(nil, "pipeline not found or not ready", "pipelineName", decision.Spec.PipelineRef.Name)
@@ -144,44 +150,65 @@ func (c *DecisionPipelineController) process(ctx context.Context, decision *v1al
 		return err
 	}
 
-	if decision.Status.Result == nil {
-		// Find nodes
-		// TODO: TAS needs to be applied here.
-		// For each possible node combination, the pipeline needs to evalute possible placements.
-		nodes := &corev1.NodeList{}
-		if err := c.List(ctx, nodes); err != nil {
-			return err
-		}
-		if len(nodes.Items) == 0 {
-			return errors.New("no nodes available")
-		}
-
-		// Run pipeline
+	// Find nodes
+	// TODO: implement inital filtering for nodes that cannot be a candidate
+	// for any pod in the PodGroupSet, e.g. due to anti-affinities/taints
+	nodes := &corev1.NodeList{}
+	if err := c.List(ctx, nodes); err != nil {
+		return err
+	}
+	if len(nodes.Items) == 0 {
+		return errors.New("no nodes available")
+	}
+	// TODO: TAS needs to be applied here.
+	// For each possible node combination, the pipeline needs to evalute possible placements.
+	nodePools := [][]corev1.Node{nodes.Items}
+	var bestPlacements map[string]string
+	var bestWeight float64
+	for _, nodePool := range nodePools {
 		request := podgroupsets.PodGroupSetPipelineRequest{
 			PodGroupSet: *podGroupSet,
-			Nodes:       nodes.Items,
+			Nodes:       nodePool,
 		}
 		result, err := pipeline.Run(request)
 		if err != nil {
 			log.V(1).Error(err, "pipeline run failed")
 			return errors.New("pipeline run failed: " + err.Error())
 		}
-		decision.Status.Result = &result
-		log.Info("decision processed", "duration", time.Since(startedAt))
-	}
 
-	// Spawn Pods
+		if len(result.TargetPlacements) == 0 {
+			// Gang cannot be placed on this node set
+			continue
+		}
+
+		if result.AggregatedOutWeights["nodePool"] > bestWeight {
+			bestPlacements = result.TargetPlacements
+			bestWeight = result.AggregatedOutWeights["nodePool"]
+		}
+	}
+	if len(bestPlacements) > 0 {
+		decision.Status.Result = &v1alpha1.DecisionResult{
+			TargetPlacements:     bestPlacements,
+			AggregatedOutWeights: map[string]float64{"nodePool": bestWeight},
+		}
+	} else {
+		log.Info("No valid placments found for pods in PodGroupSet", "PodGroupSet", podGroupSet.Name)
+	}
+	log.Info("decision processed", "duration", time.Since(startedAt))
+
+	// Spawn pods, if valid placements have been found
+	// TODO: the current approach is vulnerable to race conditions,
+	// e.g. if the state of a node in Result.TargetPlacements has changed since the decision.
+	// Some kind of reservation mechanism is needed to guarantee a successfull binding of all pods.
 	if decision.Status.Result != nil && decision.Status.Result.TargetPlacements != nil {
 		for _, group := range podGroupSet.Spec.PodGroups {
 			for i := range int(group.Spec.Replicas) {
-				podKey := fmt.Sprintf("%s-%d", group.Name, i)
-				nodeName, ok := decision.Status.Result.TargetPlacements[podKey]
+				podName := podGroupSet.PodName(group.Name, i)
+				nodeName, ok := decision.Status.Result.TargetPlacements[podName]
 				if !ok {
-					log.Info("No placement for pod", "key", podKey)
+					log.Info("No placement for pod", "key", podName)
 					continue
 				}
-
-				podName := fmt.Sprintf("%s-%s-%d", podGroupSet.Name, group.Name, i)
 
 				// Check if pod exists
 				existing := &corev1.Pod{}
@@ -204,11 +231,24 @@ func (c *DecisionPipelineController) process(ctx context.Context, decision *v1al
 					},
 					Spec: group.Spec.PodSpec,
 				}
-				// Bind
-				// TODO: use Bindings instead of patching the NodeName
-				pod.Spec.NodeName = nodeName
-
+				pod.Spec.SchedulerName = string(v1alpha1.SchedulingDomainPods)
 				if err := c.Create(ctx, pod); err != nil {
+					return err
+				}
+
+				// Bind
+				binding := &corev1.Binding{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      podName,
+						Namespace: podGroupSet.Namespace,
+					},
+					Target: corev1.ObjectReference{
+						Kind: "Node",
+						Name: nodeName,
+					},
+				}
+				if err := c.Create(ctx, binding); err != nil {
+					log.V(1).Error(err, "failed to assign node to pod via binding")
 					return err
 				}
 				log.Info("created pod", "pod", podName, "node", nodeName)
@@ -223,8 +263,32 @@ func (c *DecisionPipelineController) InitPipeline(
 	ctx context.Context,
 	p v1alpha1.Pipeline,
 ) (lib.Pipeline[podgroupsets.PodGroupSetPipelineRequest], error) {
+	var pipelines v1alpha1.PipelineList
+	if err := c.List(ctx, &pipelines); err != nil {
+		return nil, fmt.Errorf("failed to list pipelines: %w", err)
+	}
 
-	return lib.NewPipeline(ctx, c.Client, p.Name, supportedSteps, p.Spec.Steps, c.Monitor)
+	// TODO: depending on string matching for finding the pod pipeline
+	// is error-prone, using some kind of reference would be preferred.
+	var podPipelineConfig *v1alpha1.Pipeline
+	for _, pipeline := range pipelines.Items {
+		if pipeline.Spec.SchedulingDomain == v1alpha1.SchedulingDomainPods &&
+			pipeline.Spec.Type == v1alpha1.PipelineTypeFilterWeigher &&
+			pipeline.Name == "pods-scheduler" {
+			podPipelineConfig = &pipeline
+			break
+		}
+	}
+
+	if podPipelineConfig == nil {
+		return nil, fmt.Errorf("pod pipeline 'pods-scheduler' not found")
+	}
+
+	podPipeline, _ := lib.NewPipeline(ctx, c.Client, podPipelineConfig.Name, pods.SupportedSteps, podPipelineConfig.Spec.Steps, c.Monitor)
+
+	return &PodGroupSetPipeline{
+		PodPipeline: podPipeline,
+	}, nil
 }
 
 func (c *DecisionPipelineController) handlePodGroupSet() handler.EventHandler {
@@ -253,7 +317,7 @@ func (c *DecisionPipelineController) handlePodGroupSet() handler.EventHandler {
 				log.Error(err, "failed to list decisions for deleted podgroupset")
 				return
 			}
-			// TODO: the respective pods of a PodSetGroup also need to be deleted
+			// TODO: the respective pods of a PodSetGroup also need to be marked for deletion
 			for _, decision := range decisions.Items {
 				if decision.Spec.PodGroupSetRef != nil &&
 					decision.Spec.PodGroupSetRef.Name == podgroupset.Name &&
