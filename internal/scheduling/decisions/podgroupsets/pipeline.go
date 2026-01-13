@@ -12,9 +12,20 @@ import (
 )
 
 type PodGroupSetPipeline struct {
+	// TODO: reference to PodPipeline
 }
 
 func (p *PodGroupSetPipeline) Run(request podgroupsets.PodGroupSetPipelineRequest) (v1alpha1.DecisionResult, error) {
+	// TODO: instead of manually doing the capacity check here, implement the following:
+	// Copy Nodes
+	// For each podSpec:
+	// 		host = PodPipeline.Run(podSpec, Nodes)
+	//		TargetPlacements[podName] = host
+	//		Nodes = Nodes.substract(podSpec, host)
+
+	// TODO: this needs to be done for each configuration/hyperNode that TAS proposes, this means we need a result of how good the gang is,
+	// can we just use the cummulated weight of nodes?
+
 	// Map to store current node capacities
 	nodeCapacities := make(map[string]corev1.ResourceList)
 	for _, node := range request.Nodes {
