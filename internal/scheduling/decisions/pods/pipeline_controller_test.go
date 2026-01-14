@@ -517,19 +517,5 @@ func TestDecisionPipelineController_ProcessNewPod(t *testing.T) {
 
 // Helper function to create a mock pipeline that works with the pod types
 func createMockPodPipeline() lib.Pipeline[pods.PodPipelineRequest] {
-	return &mockPodPipeline{}
-}
-
-type mockPodPipeline struct{}
-
-func (m *mockPodPipeline) Run(request pods.PodPipelineRequest) (v1alpha1.DecisionResult, error) {
-	if len(request.Nodes) == 0 {
-		return v1alpha1.DecisionResult{}, nil
-	}
-
-	// Return the first node as the target host
-	targetHost := request.Nodes[0].Name
-	return v1alpha1.DecisionResult{
-		TargetHost: &targetHost,
-	}, nil
+	return &MockPodPipeline{}
 }
