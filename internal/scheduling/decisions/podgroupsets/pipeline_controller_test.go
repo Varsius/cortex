@@ -100,7 +100,7 @@ func TestDecisionPipelineController_Reconcile(t *testing.T) {
 			client := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithRuntimeObjects(objects...).
-				WithStatusSubresource(&v1alpha1.Decision{}).
+				WithStatusSubresource(&v1alpha1.Decision{}, &v1alpha1.PodGroupSet{}).
 				Build()
 
 			controller := &DecisionPipelineController{
@@ -148,7 +148,7 @@ func TestDecisionPipelineController_Reconcile(t *testing.T) {
 				}
 
 				if updatedDecision.Status.Result == nil {
-					t.Error("expected decision result to be set")
+					t.Errorf("expected decision result to be set, decision status: %+v", updatedDecision.Status)
 					return
 				}
 
@@ -161,12 +161,35 @@ func TestDecisionPipelineController_Reconcile(t *testing.T) {
 }
 
 func TestDecisionPipelineController_InitPipeline(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := v1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("Failed to add scheduling scheme: %v", err)
+	}
+
+	// Create a mock pod pipeline that InitPipeline expects to find
+	podPipeline := &v1alpha1.Pipeline{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "pods-scheduler",
+		},
+		Spec: v1alpha1.PipelineSpec{
+			Type:             v1alpha1.PipelineTypeFilterWeigher,
+			SchedulingDomain: v1alpha1.SchedulingDomainPods,
+			Steps:            []v1alpha1.StepSpec{},
+		},
+	}
+
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(podPipeline).
+		Build()
+
 	controller := &DecisionPipelineController{
 		Monitor: lib.PipelineMonitor{},
 	}
+	controller.Client = client
 
 	// This is a bit different from pods because we return a fixed pipeline
-	pipeline, err := controller.InitPipeline(t.Context(), v1alpha1.Pipeline{})
+	pipeline, err := controller.InitPipeline(context.Background(), v1alpha1.Pipeline{})
 	if err != nil {
 		t.Errorf("expected no error, got: %v", err)
 	}
@@ -318,9 +341,13 @@ func (m *mockPodGroupSetPipeline) Run(request podgroupsets.PodGroupSetPipelineRe
 	}
 	placements := make(map[string]string)
 	for _, g := range request.PodGroupSet.Spec.PodGroups {
-		placements[g.Name+"-0"] = request.Nodes[0].Name
+		for i := range int(g.Spec.Replicas) {
+			podName := request.PodGroupSet.PodName(g.Name, i)
+			placements[podName] = request.Nodes[0].Name
+		}
 	}
 	return v1alpha1.DecisionResult{
-		TargetPlacements: placements,
+		TargetPlacements:     placements,
+		AggregatedOutWeights: map[string]float64{"nodePool": 1.0},
 	}, nil
 }
