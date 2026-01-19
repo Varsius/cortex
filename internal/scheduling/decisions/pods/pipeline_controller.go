@@ -199,7 +199,7 @@ func (c *DecisionPipelineController) InitPipeline(
 	p v1alpha1.Pipeline,
 ) (lib.Pipeline[pods.PodPipelineRequest], error) {
 
-	return lib.NewPipeline(ctx, c.Client, p.Name, supportedSteps, p.Spec.Steps, c.Monitor)
+	return lib.NewPipeline(ctx, c.Client, p.Name, SupportedSteps, p.Spec.Steps, c.Monitor)
 }
 
 func (c *DecisionPipelineController) handlePod() handler.EventHandler {
@@ -259,7 +259,15 @@ func (c *DecisionPipelineController) SetupWithManager(mgr manager.Manager, mcl *
 					// Skip pods that already have a node assigned.
 					return false
 				}
-				return pod.Spec.SchedulerName == string(v1alpha1.SchedulingDomainPods)
+				if pod.Spec.SchedulerName != string(v1alpha1.SchedulingDomainPods) {
+					// Skip pods that should not be scheduled by cortex
+					return false
+				}
+				if pod.ObjectMeta.OwnerReferences != nil {
+					// Skip pods that are managed by a larger entity, e.g. by a PodGroupSet
+					return false
+				}
+				return true
 			}),
 		).
 		// Watch pipeline changes so that we can reconfigure pipelines as needed.
@@ -295,4 +303,21 @@ func (c *DecisionPipelineController) SetupWithManager(mgr manager.Manager, mcl *
 			})),
 		).
 		Complete(c)
+}
+
+// MockPodPipeline is a mock implementation of lib.Pipeline[pods.PodPipelineRequest]
+// for testing purposes. It returns the first available node as the target host.
+type MockPodPipeline struct{}
+
+func (m *MockPodPipeline) Run(request pods.PodPipelineRequest) (v1alpha1.DecisionResult, error) {
+	if len(request.Nodes) == 0 {
+		return v1alpha1.DecisionResult{}, nil
+	}
+
+	// Return the first node as the target host
+	targetHost := request.Nodes[0].Name
+	return v1alpha1.DecisionResult{
+		TargetHost:           &targetHost,
+		AggregatedOutWeights: map[string]float64{targetHost: 1.0},
+	}, nil
 }
