@@ -11,13 +11,6 @@ spec:
   createDecisions: true
   steps:
     - type: filter
-      impl: noop
-      description: |
-        This is only a passthrough step which lets all pod candidates through.
-        It is used as a placeholder step in the pods scheduler pipeline.
-      knowledges: []
-      mandatory: false
-    - type: filter
       impl: taint
       description: |
         Filters nodes based on taints, excluding nodes with NoSchedule taints
@@ -29,5 +22,19 @@ spec:
       description: |
         Filters nodes based on pod's node affinity requirements, matching
         nodes that satisfy the specified label selectors.
+      knowledges: []
+      mandatory: true
+    - type: filter
+      impl: nodecapacity
+      description: |
+        Filters nodes based on the amount of allocatable resources,
+        excluding nodes with insufficient resources.
+      knowledges: []
+      mandatory: true
+    - type: weigher
+      impl: binpack
+      description: |
+        This steps prefers nodes with a higher utilization after the workload is placed,
+        by calculating a weighted average of the individual resource utilizations.
       knowledges: []
       mandatory: true

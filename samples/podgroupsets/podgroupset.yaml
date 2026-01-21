@@ -8,13 +8,21 @@ spec:
       spec:
         replicas: 1
         podSpec:
+          tolerations:
+          - key: "kwok.x-k8s.io/node"
+            operator: "Exists"
+            effect: "NoSchedule"
           containers:
             - name: nginx
               image: nginx:latest
     - name: bar
       spec:
-        replicas: 4
+        replicas: 2
         podSpec:
+          tolerations:
+          - key: "kwok.x-k8s.io/node"
+            operator: "Exists"
+            effect: "NoSchedule"
           containers:
             - name: busybox
               image: busybox:latest
@@ -23,3 +31,8 @@ spec:
                 requests:
                   memory: "64Mi"
                   cpu: "250m"
+                  nvidia.com/gpu: 6
+                limits:
+                  memory: "64Mi"
+                  cpu: "250m"
+                  nvidia.com/gpu: 6

@@ -27,6 +27,7 @@ cortex:
   conf:
     # The operator will only touch CRs with this scheduling domain name.
     schedulingDomain: podgroupsets
+    leaderElectionID: cortex-podgroupsets-scheduling
     enabledControllers:
       - podgroupsets-decisions-pipeline-controller
       - explanation-controller

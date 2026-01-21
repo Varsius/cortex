@@ -7,12 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/cobaltcore-dev/cortex/api/delegation/podgroupsets"
 	"github.com/cobaltcore-dev/cortex/api/v1alpha1"
 	"github.com/cobaltcore-dev/cortex/internal/scheduling/decisions/pods"
+	"github.com/cobaltcore-dev/cortex/internal/scheduling/decisions/pods/helpers"
 	"github.com/cobaltcore-dev/cortex/internal/scheduling/lib"
 	"github.com/cobaltcore-dev/cortex/pkg/conf"
 	"github.com/cobaltcore-dev/cortex/pkg/multicluster"
@@ -29,6 +31,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
+
+var TopologyLevelNames []TopologyLevelName = []TopologyLevelName{
+	TopologyLevelName("zone"),
+	TopologyLevelName("rack"),
+}
 
 type DecisionPipelineController struct {
 	// Toolbox shared between all pipeline controllers.
@@ -72,6 +79,8 @@ func (c *DecisionPipelineController) ProcessNewPodGroupSet(ctx context.Context, 
 	c.processMu.Lock()
 	defer c.processMu.Unlock()
 
+	// TODO: The controller creates a new decision after a restart of the controller even
+	// if the PGS is alreade scheduled
 	decision := &v1alpha1.Decision{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "podgroupset-",
@@ -94,6 +103,8 @@ func (c *DecisionPipelineController) ProcessNewPodGroupSet(ctx context.Context, 
 		return fmt.Errorf("pipeline %s not configured", decision.Spec.PipelineRef.Name)
 	}
 	if pipelineConf.Spec.CreateDecisions {
+		log := ctrl.LoggerFrom(ctx)
+		log.Info("create decision with PoGroupSetRef")
 		if err := c.Create(ctx, decision); err != nil {
 			return err
 		}
@@ -142,6 +153,9 @@ func (c *DecisionPipelineController) process(ctx context.Context, decision *v1al
 	}
 
 	// Fetch PodGroupSet
+	if decision.Spec.PodGroupSetRef == nil {
+		return errors.New("decision has no PodGroupSetRef")
+	}
 	podGroupSet := &v1alpha1.PodGroupSet{}
 	if err := c.Get(ctx, client.ObjectKey{
 		Name:      decision.Spec.PodGroupSetRef.Name,
@@ -150,9 +164,15 @@ func (c *DecisionPipelineController) process(ctx context.Context, decision *v1al
 		return err
 	}
 
+	podGroupSetResourceRequests := make(corev1.ResourceList)
+	for _, group := range podGroupSet.Spec.PodGroups {
+		for range group.Spec.Replicas {
+			podResources := helpers.GetPodResourceRequests(corev1.Pod{Spec: group.Spec.PodSpec})
+			helpers.AddResourcesInto(podGroupSetResourceRequests, podResources)
+		}
+	}
+
 	// Find nodes
-	// TODO: implement inital filtering for nodes that cannot be a candidate
-	// for any pod in the PodGroupSet, e.g. due to anti-affinities/taints
 	nodes := &corev1.NodeList{}
 	if err := c.List(ctx, nodes); err != nil {
 		return err
@@ -160,30 +180,53 @@ func (c *DecisionPipelineController) process(ctx context.Context, decision *v1al
 	if len(nodes.Items) == 0 {
 		return errors.New("no nodes available")
 	}
-	// TODO: TAS needs to be applied here.
-	// For each possible node combination, the pipeline needs to evalute possible placements.
-	nodePools := [][]corev1.Node{nodes.Items}
+
 	var bestPlacements map[string]string
 	var bestWeight float64
-	for _, nodePool := range nodePools {
-		request := podgroupsets.PodGroupSetPipelineRequest{
-			PodGroupSet: *podGroupSet,
-			Nodes:       nodePool,
-		}
-		result, err := pipeline.Run(request)
-		if err != nil {
-			log.V(1).Error(err, "pipeline run failed")
-			return errors.New("pipeline run failed: " + err.Error())
-		}
+	// TODO: the topology should only be generated once when the controller starts up
+	// and everytime there is a node status event.
+	// This is releated to using a WatchesMulticluster for the nodes list instead
+	// of doing a list request (even though it should be cached) on each pipeline run.
+	topology := NewTopology(TopologyLevelNames, nodes.Items)
+	for _, level := range slices.Backward(topology.Levels) {
+		// TODO: I think the bottom most level (physical nodes) is missing,
+		// i.e. the edge-case that a PGS fits onto a single node
+		for _, topologyNode := range topology.Nodes[level] {
+			// Check that demand of PodGroupSet fits within topology node's allocatable resources
+			canFit := true
+			for resourceName, requestedQty := range podGroupSetResourceRequests {
+				allocatableQty, exists := topologyNode.Allocatable[resourceName]
+				if !exists || requestedQty.Cmp(allocatableQty) > 0 {
+					canFit = false
+					break
+				}
+			}
+			if !canFit {
+				continue
+			}
 
-		if len(result.TargetPlacements) == 0 {
-			// Gang cannot be placed on this node set
-			continue
-		}
+			request := podgroupsets.PodGroupSetPipelineRequest{
+				PodGroupSet: *podGroupSet,
+				Nodes:       topologyNode.Nodes,
+			}
+			result, err := pipeline.Run(request)
+			if err != nil {
+				log.V(1).Error(err, "pipeline run failed")
+				return errors.New("pipeline run failed: " + err.Error())
+			}
 
-		if result.AggregatedOutWeights["nodePool"] > bestWeight {
-			bestPlacements = result.TargetPlacements
-			bestWeight = result.AggregatedOutWeights["nodePool"]
+			if len(result.TargetPlacements) == 0 {
+				// Gang cannot be placed on this node set
+				continue
+			}
+
+			if result.AggregatedOutWeights["nodePool"] > bestWeight {
+				bestPlacements = result.TargetPlacements
+				bestWeight = result.AggregatedOutWeights["nodePool"]
+			}
+		}
+		if len(bestPlacements) > 0 {
+			break
 		}
 	}
 	if len(bestPlacements) > 0 {
@@ -191,8 +234,6 @@ func (c *DecisionPipelineController) process(ctx context.Context, decision *v1al
 			TargetPlacements:     bestPlacements,
 			AggregatedOutWeights: map[string]float64{"nodePool": bestWeight},
 		}
-	} else {
-		log.Info("No valid placments found for pods in PodGroupSet", "PodGroupSet", podGroupSet.Name)
 	}
 	log.Info("decision processed", "duration", time.Since(startedAt))
 
@@ -301,7 +342,7 @@ func (c *DecisionPipelineController) handlePodGroupSet() handler.EventHandler {
 			}
 		},
 		UpdateFunc: func(ctx context.Context, evt event.UpdateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
-			// TODO: Updating a PodGroupSet could become quite complicated depending on what attributes where patched.
+			// TODO: Updating a PodGroupSet could become quite complicated depending on what attributes were patched.
 			// Since this is not trivial, this needs further consideration and a respective design.
 			/* newPodGroupSet := evt.ObjectNew.(*v1alpha1.PodGroupSet)
 			if err := c.ProcessNewPodGroupSet(ctx, newPodGroupSet); err != nil {
@@ -317,7 +358,27 @@ func (c *DecisionPipelineController) handlePodGroupSet() handler.EventHandler {
 				log.Error(err, "failed to list decisions for deleted podgroupset")
 				return
 			}
-			// TODO: the respective pods of a PodSetGroup also need to be marked for deletion
+			// Delete all pods belonging to the deleted PodGroupSet
+			for _, group := range podgroupset.Spec.PodGroups {
+				for i := range int(group.Spec.Replicas) {
+					podName := podgroupset.PodName(group.Name, i)
+					pod := &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      podName,
+							Namespace: podgroupset.Namespace,
+						},
+					}
+					if err := c.Delete(ctx, pod); err != nil {
+						if client.IgnoreNotFound(err) != nil {
+							log.Error(err, "failed to delete pod for deleted podgroupset", "pod", podName)
+						}
+					} else {
+						log.Info("deleted pod for deleted podgroupset", "pod", podName)
+					}
+				}
+			}
+
+			// Delete decisions for the deleted PodGroupSet
 			for _, decision := range decisions.Items {
 				if decision.Spec.PodGroupSetRef != nil &&
 					decision.Spec.PodGroupSetRef.Name == podgroupset.Name &&
@@ -342,7 +403,7 @@ func (c *DecisionPipelineController) SetupWithManager(mgr manager.Manager, mcl *
 			&v1alpha1.PodGroupSet{},
 			c.handlePodGroupSet(),
 			predicate.NewPredicateFuncs(func(obj client.Object) bool {
-				// We can add logic here to filter out PodGroupSets that don't need scheduling.
+				// TODO: add logic here to filter out PodGroupSets that don't need scheduling.
 				return true
 			}),
 		).

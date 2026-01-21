@@ -1,0 +1,88 @@
+// Copyright SAP SE
+// SPDX-License-Identifier: Apache-2.0
+
+package podgroupsets
+
+import (
+	"fmt"
+
+	"github.com/cobaltcore-dev/cortex/internal/scheduling/decisions/pods/helpers"
+	corev1 "k8s.io/api/core/v1"
+)
+
+type TopologyLevelName string
+
+const TopologyRootLevel TopologyLevelName = "cluster"
+const TopologyRootNodeName string = "root"
+const TopologyLabelPrefix string = "cortex/topology-"
+
+type Topology struct {
+	Levels []TopologyLevelName
+	Nodes  map[TopologyLevelName]map[string]*TopologyNode
+}
+
+type TopologyNode struct {
+	Name        string
+	Level       TopologyLevelName
+	Capacity    corev1.ResourceList
+	Allocatable corev1.ResourceList
+	Nodes       []corev1.Node
+}
+
+func NewTopology(topologyLevels []TopologyLevelName, nodes []corev1.Node) *Topology {
+	topology := Topology{
+		Levels: append([]TopologyLevelName{TopologyRootLevel}, topologyLevels...),
+		Nodes: map[TopologyLevelName]map[string]*TopologyNode{
+			TopologyRootLevel: make(map[string]*TopologyNode),
+		},
+	}
+
+	topology.Nodes[TopologyRootLevel][TopologyRootNodeName] = &TopologyNode{
+		Name:        TopologyRootNodeName,
+		Level:       TopologyRootLevel,
+		Capacity:    make(corev1.ResourceList),
+		Allocatable: make(corev1.ResourceList),
+		Nodes:       []corev1.Node{},
+	}
+
+	for _, level := range topologyLevels {
+		topology.Nodes[level] = make(map[string]*TopologyNode)
+	}
+	for _, node := range nodes {
+		topology.addNode(node)
+	}
+	return &topology
+}
+
+func (t *Topology) addNode(node corev1.Node) {
+	topologyNodeName := ""
+	for _, level := range t.Levels {
+		if level == TopologyRootLevel {
+			t.Nodes[TopologyRootLevel][TopologyRootNodeName].addNode(node)
+			continue
+		}
+		labelKey := fmt.Sprintf("%s%s", TopologyLabelPrefix, level)
+		value, exists := node.Labels[labelKey]
+		if !exists {
+			break
+		}
+		topologyNodeName = fmt.Sprintf("%s-%s", topologyNodeName, value)
+		if topologyNode, ok := t.Nodes[level][topologyNodeName]; ok {
+			topologyNode.addNode(node)
+		} else {
+			t.Nodes[level][topologyNodeName] = &TopologyNode{
+				Name:        value,
+				Level:       level,
+				Capacity:    node.Status.Capacity.DeepCopy(),
+				Allocatable: node.Status.Allocatable.DeepCopy(),
+				Nodes:       []corev1.Node{node},
+			}
+		}
+	}
+}
+
+func (n *TopologyNode) addNode(node corev1.Node) {
+	helpers.AddResourcesInto(n.Capacity, node.Status.Capacity)
+	helpers.AddResourcesInto(n.Allocatable, node.Status.Allocatable)
+	n.Nodes = append(n.Nodes, node)
+}
