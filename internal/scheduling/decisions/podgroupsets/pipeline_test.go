@@ -74,19 +74,4 @@ func TestPodGroupSetPipeline_Run(t *testing.T) {
 	if placement != node1.Name {
 		t.Errorf("expected %s on %s, got %s", podName, node1.Name, placement)
 	}
-
-	// Test failure case
-	// TODO: this case requires a capacity filter implementation in the pods pipeline
-	/*pgsFail := pgs.DeepCopy()
-	pgsFail.Spec.PodGroups[0].Spec.Replicas = 3 // 3 * 400m = 1200m > 1000m
-
-	requestFail := podgroupsets.PodGroupSetPipelineRequest{
-		PodGroupSet: *pgsFail,
-		Nodes:       []corev1.Node{node1},
-	}
-
-	_, err = pipeline.Run(requestFail)
-	if err == nil {
-		t.Fatal("expected error, got none")
-	}*/
 }
