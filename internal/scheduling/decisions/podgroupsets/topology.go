@@ -13,6 +13,7 @@ import (
 type TopologyLevelName string
 
 const TopologyRootLevel TopologyLevelName = "cluster"
+const TopologyLeafLevel TopologyLevelName = "node"
 const TopologyRootNodeName string = "root"
 const TopologyLabelPrefix string = "cortex/topology-"
 
@@ -30,8 +31,11 @@ type TopologyNode struct {
 }
 
 func NewTopology(topologyLevels []TopologyLevelName, nodes []corev1.Node) *Topology {
+	allLevels := append([]TopologyLevelName{TopologyRootLevel}, topologyLevels...)
+	allLevels = append(allLevels, TopologyLeafLevel)
+
 	topology := Topology{
-		Levels: append([]TopologyLevelName{TopologyRootLevel}, topologyLevels...),
+		Levels: allLevels,
 		Nodes: map[TopologyLevelName]map[string]*TopologyNode{
 			TopologyRootLevel: make(map[string]*TopologyNode),
 		},
@@ -48,6 +52,7 @@ func NewTopology(topologyLevels []TopologyLevelName, nodes []corev1.Node) *Topol
 	for _, level := range topologyLevels {
 		topology.Nodes[level] = make(map[string]*TopologyNode)
 	}
+	topology.Nodes[TopologyLeafLevel] = make(map[string]*TopologyNode)
 	for _, node := range nodes {
 		topology.addNode(node)
 	}
@@ -59,6 +64,16 @@ func (t *Topology) addNode(node corev1.Node) {
 	for _, level := range t.Levels {
 		if level == TopologyRootLevel {
 			t.Nodes[TopologyRootLevel][TopologyRootNodeName].addNode(node)
+			continue
+		}
+		if level == TopologyLeafLevel {
+			t.Nodes[TopologyLeafLevel][node.Name] = &TopologyNode{
+				Name:        node.Name,
+				Level:       TopologyLeafLevel,
+				Capacity:    node.Status.Capacity.DeepCopy(),
+				Allocatable: node.Status.Allocatable.DeepCopy(),
+				Nodes:       []corev1.Node{node},
+			}
 			continue
 		}
 		labelKey := fmt.Sprintf("%s%s", TopologyLabelPrefix, level)

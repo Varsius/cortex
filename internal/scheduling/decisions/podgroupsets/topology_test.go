@@ -25,7 +25,7 @@ func TestNewTopology(t *testing.T) {
 			name:           "Empty topology with no nodes",
 			topologyLevels: []TopologyLevelName{},
 			nodes:          []corev1.Node{},
-			expectedLevels: 1, // Only root level
+			expectedLevels: 2, // Root + leaf level
 			expectedCapacity: map[TopologyLevelName]corev1.ResourceList{
 				TopologyRootLevel: {},
 			},
@@ -34,6 +34,7 @@ func TestNewTopology(t *testing.T) {
 			},
 			expectedNodes: map[TopologyLevelName]int{
 				TopologyRootLevel: 1, // Root node is always present
+				TopologyLeafLevel: 0,
 			},
 		},
 		{
@@ -43,7 +44,7 @@ func TestNewTopology(t *testing.T) {
 				createTestNode("node1", map[string]string{}, "4", "8Gi"),
 				createTestNode("node2", map[string]string{}, "8", "16Gi"),
 			},
-			expectedLevels: 1, // Only root level
+			expectedLevels: 2,
 			expectedCapacity: map[TopologyLevelName]corev1.ResourceList{
 				TopologyRootLevel: {
 					corev1.ResourceCPU:    resource.MustParse("12"),   // 4 + 8
@@ -58,6 +59,7 @@ func TestNewTopology(t *testing.T) {
 			},
 			expectedNodes: map[TopologyLevelName]int{
 				TopologyRootLevel: 1, // Root node with all nodes
+				TopologyLeafLevel: 2, // Individual nodes
 			},
 		},
 		{
@@ -77,7 +79,7 @@ func TestNewTopology(t *testing.T) {
 					"cortex/topology-rack": "rack-1",
 				}, "8", "16Gi"),
 			},
-			expectedLevels: 3, // Root + zone + rack
+			expectedLevels: 4, // Root + zone + rack + leaf
 			expectedCapacity: map[TopologyLevelName]corev1.ResourceList{
 				TopologyRootLevel: {
 					corev1.ResourceCPU:    resource.MustParse("16"),   // 4 + 4 + 8
@@ -110,6 +112,7 @@ func TestNewTopology(t *testing.T) {
 				TopologyRootLevel: 1,
 				"zone":            2, // zone-a, zone-b
 				"rack":            3, // zone-a/rack-1, zone-a/rack-2, zone-b/rack-1
+				TopologyLeafLevel: 3, // all nodes
 			},
 		},
 	}

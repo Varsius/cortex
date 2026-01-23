@@ -193,8 +193,6 @@ func (c *DecisionPipelineController) process(ctx context.Context, decision *v1al
 	var bestPlacements map[string]string
 	var bestWeight float64
 	for _, level := range slices.Backward(topology.Levels) {
-		// TODO: I think the bottom most level (physical nodes) is missing,
-		// i.e. the edge-case that a PGS fits onto a single node
 		for _, topologyNode := range topology.Nodes[level] {
 			// Check that demand of PodGroupSet fits within topology node's allocatable resources
 			canFit := true
