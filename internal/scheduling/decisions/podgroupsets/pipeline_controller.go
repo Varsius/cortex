@@ -79,8 +79,6 @@ func (c *DecisionPipelineController) ProcessNewPodGroupSet(ctx context.Context, 
 	c.processMu.Lock()
 	defer c.processMu.Unlock()
 
-	// TODO: The controller creates a new decision after a restart of the controller even
-	// if the PGS is alreade scheduled
 	decision := &v1alpha1.Decision{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "podgroupset-",
@@ -104,7 +102,7 @@ func (c *DecisionPipelineController) ProcessNewPodGroupSet(ctx context.Context, 
 	}
 	if pipelineConf.Spec.CreateDecisions {
 		log := ctrl.LoggerFrom(ctx)
-		log.Info("create decision with PoGroupSetRef")
+		log.Info("create decision with PodGroupSetRef")
 		if err := c.Create(ctx, decision); err != nil {
 			return err
 		}
@@ -336,6 +334,24 @@ func (c *DecisionPipelineController) handlePodGroupSet() handler.EventHandler {
 	return handler.Funcs{
 		CreateFunc: func(ctx context.Context, evt event.CreateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 			pgs := evt.Object.(*v1alpha1.PodGroupSet)
+
+			var decisions v1alpha1.DecisionList
+			if err := c.List(ctx, &decisions); err != nil {
+				log := ctrl.LoggerFrom(ctx)
+				log.Error(err, "failed to list decisions for new pgs", "pgs", pgs.Name)
+				return
+			}
+
+			for _, decision := range decisions.Items {
+				if decision.Spec.PodGroupSetRef != nil &&
+					decision.Spec.PodGroupSetRef.Name == pgs.Name &&
+					decision.Spec.PodGroupSetRef.Namespace == pgs.Namespace {
+					log := ctrl.LoggerFrom(ctx)
+					log.V(1).Info("Decision for PodGroupSet already exists", "pgs", pgs.Name)
+					return
+				}
+			}
+
 			if err := c.ProcessNewPodGroupSet(ctx, pgs); err != nil {
 				log := ctrl.LoggerFrom(ctx)
 				log.Error(err, "failed to process new pgs", "pgs", pgs.Name)
@@ -344,11 +360,6 @@ func (c *DecisionPipelineController) handlePodGroupSet() handler.EventHandler {
 		UpdateFunc: func(ctx context.Context, evt event.UpdateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 			// TODO: Updating a PodGroupSet could become quite complicated depending on what attributes were patched.
 			// Since this is not trivial, this needs further consideration and a respective design.
-			/* newPodGroupSet := evt.ObjectNew.(*v1alpha1.PodGroupSet)
-			if err := c.ProcessNewPodGroupSet(ctx, newPodGroupSet); err != nil {
-				log := ctrl.LoggerFrom(ctx)
-				log.Error(err, "failed to process updated pgs", "pgs", newPodGroupSet.Name)
-			}*/
 		},
 		DeleteFunc: func(ctx context.Context, evt event.DeleteEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 			log := ctrl.LoggerFrom(ctx)
