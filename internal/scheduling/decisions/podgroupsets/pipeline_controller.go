@@ -44,6 +44,11 @@ type DecisionPipelineController struct {
 	// Mutex to only allow one process at a time
 	processMu sync.Mutex
 
+	// Mutex to serialize updates/accesses of topology
+	topologyMu sync.RWMutex
+	// Cluster topology with all nodes available for scheduling
+	topology *Topology
+
 	// Config for the scheduling operator.
 	Conf conf.Config
 
@@ -170,22 +175,23 @@ func (c *DecisionPipelineController) process(ctx context.Context, decision *v1al
 		}
 	}
 
-	// Find nodes
-	nodes := &corev1.NodeList{}
-	if err := c.List(ctx, nodes); err != nil {
-		return err
-	}
-	if len(nodes.Items) == 0 {
-		return errors.New("no nodes available")
+	c.topologyMu.RLock()
+	topology := c.topology
+	c.topologyMu.RUnlock()
+
+	if topology == nil {
+		nodes := &corev1.NodeList{}
+		if err := c.List(ctx, nodes); err != nil {
+			return err
+		}
+		if len(nodes.Items) == 0 {
+			return errors.New("no nodes available")
+		}
+		topology = NewTopology(TopologyLevelNames, nodes.Items)
 	}
 
 	var bestPlacements map[string]string
 	var bestWeight float64
-	// TODO: the topology should only be generated once when the controller starts up
-	// and everytime there is a node status event.
-	// This is releated to using a WatchesMulticluster for the nodes list instead
-	// of doing a list request (even though it should be cached) on each pipeline run.
-	topology := NewTopology(TopologyLevelNames, nodes.Items)
 	for _, level := range slices.Backward(topology.Levels) {
 		// TODO: I think the bottom most level (physical nodes) is missing,
 		// i.e. the edge-case that a PGS fits onto a single node
@@ -330,6 +336,47 @@ func (c *DecisionPipelineController) InitPipeline(
 	}, nil
 }
 
+func (c *DecisionPipelineController) updateTopology(ctx context.Context) error {
+	nodes := &corev1.NodeList{}
+	if err := c.List(ctx, nodes); err != nil {
+		log := ctrl.LoggerFrom(ctx)
+		log.Error(err, "failed to list nodes")
+		return err
+	}
+
+	c.topologyMu.Lock()
+	defer c.topologyMu.Unlock()
+
+	c.topology = NewTopology(TopologyLevelNames, nodes.Items)
+
+	log := ctrl.LoggerFrom(ctx)
+	log.V(1).Info("updated topology", "nodeCount", len(nodes.Items))
+	return nil
+}
+
+func (c *DecisionPipelineController) handleNode() handler.EventHandler {
+	return handler.Funcs{
+		CreateFunc: func(ctx context.Context, evt event.CreateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			if err := c.updateTopology(ctx); err != nil {
+				log := ctrl.LoggerFrom(ctx)
+				log.Error(err, "failed to update topology on node create")
+			}
+		},
+		UpdateFunc: func(ctx context.Context, evt event.UpdateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			if err := c.updateTopology(ctx); err != nil {
+				log := ctrl.LoggerFrom(ctx)
+				log.Error(err, "failed to update topology on node update")
+			}
+		},
+		DeleteFunc: func(ctx context.Context, evt event.DeleteEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+			if err := c.updateTopology(ctx); err != nil {
+				log := ctrl.LoggerFrom(ctx)
+				log.Error(err, "failed to update topology on node delete")
+			}
+		},
+	}
+}
+
 func (c *DecisionPipelineController) handlePodGroupSet() handler.EventHandler {
 	return handler.Funcs{
 		CreateFunc: func(ctx context.Context, evt event.CreateEvent, queue workqueue.TypedRateLimitingInterface[reconcile.Request]) {
@@ -409,14 +456,19 @@ func (c *DecisionPipelineController) SetupWithManager(mgr manager.Manager, mcl *
 	if err := mgr.Add(manager.RunnableFunc(c.InitAllPipelines)); err != nil {
 		return err
 	}
+
+	if err := mgr.Add(manager.RunnableFunc(c.updateTopology)); err != nil {
+		return err
+	}
+
 	return multicluster.BuildController(mcl, mgr).
+		WatchesMulticluster(
+			&corev1.Node{},
+			c.handleNode(),
+		).
 		WatchesMulticluster(
 			&v1alpha1.PodGroupSet{},
 			c.handlePodGroupSet(),
-			predicate.NewPredicateFuncs(func(obj client.Object) bool {
-				// TODO: add logic here to filter out PodGroupSets that don't need scheduling.
-				return true
-			}),
 		).
 		WatchesMulticluster(
 			&v1alpha1.Pipeline{},
