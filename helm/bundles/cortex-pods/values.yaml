@@ -35,6 +35,7 @@ cortex:
     leaderElectionID: cortex-pods-scheduling
     enabledControllers:
       - pods-decisions-pipeline-controller
+      - podgroupsets-controller
       - explanation-controller
     monitoring:
       labels:

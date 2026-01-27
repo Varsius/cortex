@@ -8,7 +8,7 @@ analytics_settings(False)
 
 # Use the ACTIVE_DEPLOYMENTS env var to select which Cortex bundles to deploy.
 ACTIVE_DEPLOYMENTS_ENV = os.getenv(
-    'ACTIVE_DEPLOYMENTS', 'nova,manila,cinder,ironcore,pods,podgroupsets')
+    'ACTIVE_DEPLOYMENTS', 'nova,manila,cinder,ironcore,pods')
 if ACTIVE_DEPLOYMENTS_ENV == "":
     ACTIVE_DEPLOYMENTS = []  # Catch "".split(",") = [""]
 else:
@@ -57,7 +57,6 @@ bundle_charts = [
     ('helm/bundles/cortex-cinder', 'cortex-cinder'),
     ('helm/bundles/cortex-ironcore', 'cortex-ironcore'),
     ('helm/bundles/cortex-pods', 'cortex-pods'),
-    ('helm/bundles/cortex-podgroupsets', 'cortex-podgroupsets'),
 ]
 dep_charts = {
     'cortex-crds': [
@@ -80,10 +79,6 @@ dep_charts = {
         ('dist/chart', 'cortex'),
     ],
     'cortex-pods': [
-        ('helm/library/cortex-postgres', 'cortex-postgres'),
-        ('dist/chart', 'cortex'),
-    ],
-    'cortex-podgroupsets': [
         ('helm/library/cortex-postgres', 'cortex-postgres'),
         ('dist/chart', 'cortex'),
     ],
@@ -128,12 +123,7 @@ k8s_yaml(helm('./helm/bundles/cortex-crds', name='cortex-crds', set=[
     'cortex.namePrefix=cortex-ironcore',
 
     'cortex.crd.pods.enable=true',
-    'cortex.rbac.pods.enable=true',
-    'cortex.namePrefix=cortex-pods',
-
-    'cortex.crd.podgroupsets.enable=true',
-    'cortex.rbac.podgroupsets.enable=true',
-    'cortex.namePrefix=cortex-podgroupsets',
+    # Remove pods RBAC from cortex-crds as it's handled by cortex-pods bundle
 ]))
 
 if 'nova' in ACTIVE_DEPLOYMENTS:
@@ -216,20 +206,6 @@ if 'pods' in ACTIVE_DEPLOYMENTS:
     k8s_yaml(helm('./helm/bundles/cortex-pods',
              name='cortex-pods', values=tilt_values),)
     k8s_resource('cortex-pods-controller-manager', labels=['Cortex-Pods'])
-    # Deploy example resources
-    # k8s_yaml('samples/pods/node.yaml')
-    # k8s_yaml('samples/pods/pod.yaml')
-    # k8s_resource('test-pod', labels=['Cortex-Pods'])
-
-if 'podgroupsets' in ACTIVE_DEPLOYMENTS:
-    print("Activating Cortex PodGroupSets bundle")
-    k8s_yaml(helm('./helm/bundles/cortex-podgroupsets',
-             name='cortex-podgroupsets', values=tilt_values),)
-    k8s_resource('cortex-podgroupsets-controller-manager',
-                 labels=['Cortex-PodGroupSets'])
-    # Deploy example resources
-    # k8s_yaml('samples/podgroupsets/podgroupset.yaml')
-    # k8s_yaml('samples/podgroupsets/nodes.yaml')
 
 # Dev Dependencies
 local('sh helm/sync.sh helm/dev/cortex-prometheus-operator')

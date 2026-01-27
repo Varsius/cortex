@@ -43,7 +43,6 @@ import (
 	decisionsmachines "github.com/cobaltcore-dev/cortex/internal/scheduling/decisions/machines"
 	decisionsmanila "github.com/cobaltcore-dev/cortex/internal/scheduling/decisions/manila"
 	decisionsnova "github.com/cobaltcore-dev/cortex/internal/scheduling/decisions/nova"
-	decisionpodgroupsets "github.com/cobaltcore-dev/cortex/internal/scheduling/decisions/podgroupsets"
 	decisionpods "github.com/cobaltcore-dev/cortex/internal/scheduling/decisions/pods"
 	deschedulingnova "github.com/cobaltcore-dev/cortex/internal/scheduling/descheduling/nova"
 	cindere2e "github.com/cobaltcore-dev/cortex/internal/scheduling/e2e/cinder"
@@ -383,15 +382,20 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	if slices.Contains(config.EnabledControllers, "podgroupsets-decisions-pipeline-controller") {
-		controller := &decisionpodgroupsets.DecisionPipelineController{
+	if slices.Contains(config.EnabledControllers, "podgroupsets-controller") {
+		if !slices.Contains(config.EnabledControllers, "pods-decisions-pipeline-controller") {
+			setupLog.Error(nil, "podgroupsets-controller requires pods-decisions-pipeline-controller to be enabled")
+			os.Exit(1)
+		}
+
+		controller := &decisionpods.PodGroupSetController{
+			Client:  multiclusterClient,
 			Monitor: pipelineMonitor,
 			Conf:    config,
 		}
-		// Inferred through the base controller.
-		controller.Client = multiclusterClient
-		if err := (controller).SetupWithManager(mgr, multiclusterClient); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "DecisionReconciler")
+
+		if err := controller.SetupWithManager(mgr, multiclusterClient); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "PodGroupSetController")
 			os.Exit(1)
 		}
 	}

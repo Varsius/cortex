@@ -1,7 +1,7 @@
 // Copyright SAP SE
 // SPDX-License-Identifier: Apache-2.0
 
-package podgroupsets
+package pods
 
 import (
 	"fmt"
@@ -11,6 +11,11 @@ import (
 )
 
 type TopologyLevelName string
+
+var TopologyLevelNames []TopologyLevelName = []TopologyLevelName{
+	TopologyLevelName("zone"),
+	TopologyLevelName("rack"),
+}
 
 const TopologyRootLevel TopologyLevelName = "cluster"
 const TopologyLeafLevel TopologyLevelName = "node"
