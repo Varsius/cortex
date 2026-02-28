@@ -106,16 +106,17 @@ func (s *Scheduler) handleUpdatePod(oldObj, newObj interface{}) {
 		return
 	}
 
-	s.Cache.RemovePod(oldPod)
-	// TODO: this condition is a workaround since the initial resource allocation for newly binded pods is marked in
-	// the pipeline and the pod binding update observed here would duplicate the cache entry.
-	// Future plan: track which pods are assumed/confirmed to avoid multiple entries
-	// of the same pod
-	if oldPod.Spec.NodeName == "" {
+	// If the pod was just created and is being bound (oldPod had no node, newPod has a node),
+	// skip the cache update because createPods already added it optimistically
+	if oldPod.Spec.NodeName == "" && newPod.Spec.NodeName != "" {
 		return
 	}
 
-	s.Cache.AddPod(newPod)
+	// For all other updates (resource changes, status changes, etc.), update the cache
+	if newPod.Spec.NodeName != "" {
+		s.Cache.RemovePod(oldPod)
+		s.Cache.AddPod(newPod)
+	}
 }
 
 func (s *Scheduler) handleDeletePod(obj interface{}) {
@@ -145,7 +146,7 @@ func (s *Scheduler) handleAddNode(obj interface{}) {
 func (s *Scheduler) handleUpdateNode(oldObj, newObj interface{}) {
 	// TODO: remove and add does not work since this clears
 	// the nodeAllocatable entry in cache
-	oldNode, ok := oldObj.(*corev1.Node)
+	_, ok := oldObj.(*corev1.Node)
 	if !ok {
 		s.Logger.Error(nil, "Cannot convert oldObj to *corev1.Node", "obj", oldObj)
 		return
@@ -157,7 +158,6 @@ func (s *Scheduler) handleUpdateNode(oldObj, newObj interface{}) {
 		return
 	}
 
-	s.Cache.RemoveNode(oldNode)
 	s.Cache.AddNode(newNode)
 }
 

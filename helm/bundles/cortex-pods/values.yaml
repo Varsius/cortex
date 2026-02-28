@@ -19,6 +19,11 @@ alerts:
   prometheus: openstack
 
 cortex:
+  controllerManager:
+    container:
+      image:
+        repository: host.docker.internal:5001/cortex
+        tag: latest
   enabled: true
   # CRDs are deployed in the cortex-crds chart.
   crd: { enable: false }

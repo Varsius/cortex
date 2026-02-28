@@ -4,6 +4,7 @@
 package pods
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/cobaltcore-dev/cortex/internal/scheduling/pods/helpers"
@@ -95,6 +96,7 @@ func (c *Cache) AddNode(node *corev1.Node) {
 		if existingNode.Name == node.Name {
 			// Update existing node
 			c.Nodes[i] = *node.DeepCopy()
+			c.updateNodeAllocatable(node.Name)
 			c.updateTopology()
 			return
 		}
@@ -106,6 +108,7 @@ func (c *Cache) AddNode(node *corev1.Node) {
 		c.nodeAllocated[node.Name] = make(corev1.ResourceList)
 	}
 
+	c.updateNodeAllocatable(node.Name)
 	c.updateTopology()
 }
 
@@ -137,6 +140,8 @@ func (c *Cache) updateNodeAllocatable(nodeName string) {
 
 			if allocated, exists := c.nodeAllocated[nodeName]; exists {
 				helpers.SubtractResourcesInto(remaining, allocated)
+			} else {
+				fmt.Printf("ERROR: %s has no allocated", nodeName)
 			}
 			// TODO: error case
 

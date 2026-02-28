@@ -1,0 +1,10 @@
+cortex:
+  image:
+    repository: localhost:5001/cortex
+    tag: latest
+    pullPolicy: Always
+  postgres:
+    image:
+      repository: localhost:5001/cortex-postgres
+      tag: latest
+      pullPolicy: Always

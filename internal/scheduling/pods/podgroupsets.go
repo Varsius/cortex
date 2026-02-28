@@ -122,8 +122,8 @@ func (s *Scheduler) getPodGroupSetPlacement(pgs *v1alpha1.PodGroupSet, nodes []c
 	placementWeight = 0.0
 
 	for _, group := range pgs.Spec.PodGroups {
-		for i := range int(group.Spec.Replicas) {
-			podName := pgs.PodName(group.Name, i)
+		for podIndex := range int(group.Spec.Replicas) {
+			podName := pgs.PodName(group.Name, podIndex)
 
 			podRequest := pods.PodPipelineRequest{
 				Nodes: nodePool,
@@ -149,9 +149,11 @@ func (s *Scheduler) getPodGroupSetPlacement(pgs *v1alpha1.PodGroupSet, nodes []c
 			placementWeight += result.AggregatedOutWeights[nodeName]
 
 			podResourceRequests := helpers.GetPodResourceRequests(podRequest.Pod)
-			for i := range nodePool {
-				if nodePool[i].Name == nodeName {
-					helpers.SubtractResourcesInto(nodePool[i].Status.Allocatable, podResourceRequests)
+			for i, n := range nodePool {
+				if n.Name == nodeName {
+					updatedNode := n.DeepCopy()
+					helpers.SubtractResourcesInto(updatedNode.Status.Allocatable, podResourceRequests)
+					nodePool[i] = *updatedNode
 					break
 				}
 			}

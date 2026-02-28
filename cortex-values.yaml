@@ -1,0 +1,39 @@
+# Copyright 2025 SAP SE
+# SPDX-License-Identifier: Apache-2.0
+
+# Override config values that contain sensitive information or
+# are specific to your environment. These values can be used in the Tiltfile.
+
+# SSO certificate to use.
+sharedSSOCert: &sharedSSOCert
+  # Certificate "public key". (Optional, remove this key if not needed)
+  cert: |
+    -----BEGIN CERTIFICATE-----
+    Your certificate here
+    -----END CERTIFICATE-----
+  # Certificate private key. (Optional, remove this key if not needed)
+  key: |
+    -----BEGIN PRIVATE KEY-----
+    Your private key here
+    -----END PRIVATE KEY
+  # Whether the certificate is self-signed.
+  # If true, the certificate is not verified.
+  selfSigned: "false"
+
+prometheus:
+  url: "https://path-to-your-prometheus"
+  sso:
+    enabled: false
+    <<: *sharedSSOCert
+
+openstack:
+  url: https://path-to-keystone/v3
+  availability: public
+  username: openstack-user-with-all-project-read-access
+  password: openstack-user-password
+  projectName: openstack-project-of-user
+  userDomainName: openstack-domain-of-user
+  projectDomainName: openstack-domain-of-project-scoped-to
+  sso:
+    enabled: false
+    <<: *sharedSSOCert
