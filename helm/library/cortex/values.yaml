@@ -14,12 +14,12 @@ controllerManager:
       - "--health-probe-bind-address=:8081"
       - "--metrics-secure=false"
     resources:
-      limits:
+      #limits:
+      #  cpu: 500m
+      #  memory: 2048Mi
+      requests:
         cpu: 500m
         memory: 2048Mi
-      requests:
-        cpu: 10m
-        memory: 64Mi
     livenessProbe:
       initialDelaySeconds: 15
       periodSeconds: 20
