@@ -140,17 +140,17 @@ func (p *filterWeigherPipeline[RequestType]) runFilters(
 	for _, filterName := range p.filtersOrder {
 		filter := p.filters[filterName]
 		stepLog := log.With("filter", filterName)
-		stepLog.Info("scheduler: running filter")
+		//stepLog.Info("scheduler: running filter")
 		result, err := filter.Run(stepLog, filteredRequest)
 		if errors.Is(err, ErrStepSkipped) {
-			stepLog.Info("scheduler: filter skipped")
+			//stepLog.Info("scheduler: filter skipped")
 			continue
 		}
 		if err != nil {
 			stepLog.Error("scheduler: failed to run filter", "error", err)
 			continue
 		}
-		stepLog.Info("scheduler: finished filter")
+		//stepLog.Info("scheduler: finished filter")
 		// Mutate the request to only include the remaining subjects.
 		// Assume the resulting request type is the same as the input type.
 		filteredRequest = filteredRequest.FilterSubjects(result.Activations).(RequestType)
@@ -172,17 +172,17 @@ func (p *filterWeigherPipeline[RequestType]) runWeighers(
 		weigher := p.weighers[weigherName]
 		wg.Go(func() {
 			stepLog := log.With("weigher", weigherName)
-			stepLog.Info("scheduler: running weigher")
+			//stepLog.Info("scheduler: running weigher")
 			result, err := weigher.Run(stepLog, filteredRequest)
 			if errors.Is(err, ErrStepSkipped) {
 				stepLog.Info("scheduler: weigher skipped")
 				return
 			}
 			if err != nil {
-				stepLog.Error("scheduler: failed to run weigher", "error", err)
+				// stepLog.Error("scheduler: failed to run weigher", "error", err)
 				return
 			}
-			stepLog.Info("scheduler: finished weigher")
+			//stepLog.Info("scheduler: finished weigher")
 			lock.Lock()
 			defer lock.Unlock()
 			activationsByStep[weigherName] = result.Activations
@@ -251,20 +251,20 @@ func (p *filterWeigherPipeline[RequestType]) Run(request RequestType) (v1alpha1.
 	}
 	traceLog := slog.With(slogArgsAny...)
 
-	subjectsIn := request.GetSubjects()
-	traceLog.Info("scheduler: starting pipeline", "subjects", subjectsIn)
+	// subjectsIn := request.GetSubjects()
+	// traceLog.Info("scheduler: starting pipeline", "subjects", subjectsIn)
 
 	// Normalize the input weights so we can apply step weights meaningfully.
 	inWeights := p.normalizeInputWeights(request.GetWeights())
-	traceLog.Info("scheduler: input weights", "weights", inWeights)
+	//traceLog.Info("scheduler: input weights", "weights", inWeights)
 
 	// Run filters first to reduce the number of subjects.
 	// Any weights assigned to filtered out subjects are ignored.
 	filteredRequest := p.runFilters(traceLog, request)
-	traceLog.Info(
+	/*traceLog.Info(
 		"scheduler: finished filters",
 		"remainingSubjects", filteredRequest.GetSubjects(),
-	)
+	)*/
 
 	// Run weighers on the filtered subjects.
 	remainingWeights := make(map[string]float64, len(filteredRequest.GetSubjects()))
@@ -276,7 +276,7 @@ func (p *filterWeigherPipeline[RequestType]) Run(request RequestType) (v1alpha1.
 	traceLog.Info("scheduler: output weights", "weights", outWeights)
 
 	subjects := p.sortSubjectsByWeights(outWeights)
-	traceLog.Info("scheduler: sorted subjects", "subjects", subjects)
+	//traceLog.Info("scheduler: sorted subjects", "subjects", subjects)
 
 	// Collect some metrics about the pipeline execution.
 	go p.monitor.observePipelineResult(request, subjects)

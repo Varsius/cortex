@@ -94,7 +94,7 @@ func (s *Scheduler) handleAddPod(obj interface{}) {
 }
 
 func (s *Scheduler) handleUpdatePod(oldObj, newObj interface{}) {
-	oldPod, ok := oldObj.(*corev1.Pod)
+	/*oldPod, ok := oldObj.(*corev1.Pod)
 	if !ok {
 		s.Logger.Error(nil, "Cannot convert oldObj to *corev1.Pod", "obj", oldObj)
 		return
@@ -116,7 +116,7 @@ func (s *Scheduler) handleUpdatePod(oldObj, newObj interface{}) {
 	if newPod.Spec.NodeName != "" {
 		s.Cache.RemovePod(oldPod)
 		s.Cache.AddPod(newPod)
-	}
+	}*/
 }
 
 func (s *Scheduler) handleDeletePod(obj interface{}) {
@@ -146,7 +146,7 @@ func (s *Scheduler) handleAddNode(obj interface{}) {
 func (s *Scheduler) handleUpdateNode(oldObj, newObj interface{}) {
 	// TODO: remove and add does not work since this clears
 	// the nodeAllocatable entry in cache
-	_, ok := oldObj.(*corev1.Node)
+	/*_, ok := oldObj.(*corev1.Node)
 	if !ok {
 		s.Logger.Error(nil, "Cannot convert oldObj to *corev1.Node", "obj", oldObj)
 		return
@@ -158,7 +158,7 @@ func (s *Scheduler) handleUpdateNode(oldObj, newObj interface{}) {
 		return
 	}
 
-	s.Cache.AddNode(newNode)
+	s.Cache.AddNode(newNode)*/
 }
 
 func (s *Scheduler) handleDeleteNode(obj interface{}) {

@@ -69,7 +69,7 @@ func (s *Scheduler) schedulePodGroupSet(ctx context.Context, pgs *v1alpha1.PodGr
 			}
 			placements, weight, err := s.getPodGroupSetPlacement(pgs, topologyNode.Nodes, pipeline)
 			if err != nil {
-				log.V(1).Error(err, "failed to schedule PodGroupSet")
+				// log.V(1).Error(err, "failed to schedule PodGroupSet")
 				continue
 			}
 

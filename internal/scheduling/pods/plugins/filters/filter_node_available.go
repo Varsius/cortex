@@ -27,9 +27,10 @@ func (NodeAvailableFilter) Run(traceLog *slog.Logger, request pods.PodPipelineRe
 	stats := make(map[string]lib.FilterWeigherPipelineStepStatistics)
 
 	for _, node := range request.Nodes {
-		if isNodeHealthy(node) && isNodeSchedulable(node) {
+		/*if isNodeHealthy(node) && isNodeSchedulable(node) {
 			activations[node.Name] = 0.0
-		}
+		}*/
+		activations[node.Name] = 0.0
 	}
 
 	return &lib.FilterWeigherPipelineStepResult{Activations: activations, Statistics: stats}, nil

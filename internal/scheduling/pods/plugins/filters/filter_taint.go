@@ -27,9 +27,10 @@ func (TaintFilter) Run(traceLog *slog.Logger, request pods.PodPipelineRequest) (
 	stats := make(map[string]lib.FilterWeigherPipelineStepStatistics)
 
 	for _, node := range request.Nodes {
-		if canScheduleOnNode(node, request.Pod) {
+		/*if canScheduleOnNode(node, request.Pod) {
 			activations[node.Name] = 0.0
-		}
+		}*/
+		activations[node.Name] = 0.0
 	}
 
 	return &lib.FilterWeigherPipelineStepResult{Activations: activations, Statistics: stats}, nil

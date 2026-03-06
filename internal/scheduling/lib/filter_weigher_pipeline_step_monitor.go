@@ -78,10 +78,10 @@ func (s *FilterWeigherPipelineStepMonitor[RequestType]) RunWrapped(
 	if err != nil {
 		return nil, err
 	}
-	traceLog.Info(
+	/*traceLog.Info(
 		"scheduler: finished step", "name", s.stepName,
 		"inWeights", inWeights, "outWeights", stepResult.Activations,
-	)
+	)*/
 
 	// Observe how much the step modifies the weights of the subjects.
 	if s.stepSubjectWeight != nil {
@@ -90,10 +90,10 @@ func (s *FilterWeigherPipelineStepMonitor[RequestType]) RunWrapped(
 				WithLabelValues(s.pipelineName, subject, s.stepName).
 				Add(weight)
 			if weight != 0.0 {
-				traceLog.Info(
+				/*traceLog.Info(
 					"scheduler: modified subject weight",
 					"name", s.stepName, "weight", weight,
-				)
+				)*/
 			}
 		}
 	}
@@ -103,10 +103,10 @@ func (s *FilterWeigherPipelineStepMonitor[RequestType]) RunWrapped(
 	subjectsOut := slices.Collect(maps.Keys(stepResult.Activations))
 	nSubjectsRemoved := len(subjectsIn) - len(subjectsOut)
 	if nSubjectsRemoved < 0 {
-		traceLog.Info(
+		/*traceLog.Info(
 			"scheduler: removed subjects",
 			"name", s.stepName, "count", nSubjectsRemoved,
-		)
+		)*/
 	}
 	if s.removedSubjectsObserver != nil {
 		s.removedSubjectsObserver.Observe(float64(nSubjectsRemoved))
@@ -134,11 +134,11 @@ func (s *FilterWeigherPipelineStepMonitor[RequestType]) RunWrapped(
 				WithLabelValues(s.pipelineName, s.stepName, strconv.Itoa(idx))
 			o.Observe(float64(originalIdx))
 		}
-		traceLog.Info(
+		/*traceLog.Info(
 			"scheduler: reordered subject",
 			"name", s.stepName, "subject", subjectsOut[idx],
 			"originalIdx", originalIdx, "newIdx", idx,
-		)
+		)*/
 	}
 
 	// Based on the provided step statistics, log something like this:
@@ -162,7 +162,7 @@ func (s *FilterWeigherPipelineStepMonitor[RequestType]) RunWrapped(
 				beforeBuilder.WriteString(", ")
 			}
 		}
-		before := beforeBuilder.String()
+		// before := beforeBuilder.String()
 		var afterBuilder strings.Builder
 		for i, subject := range subjectsOut {
 			if subjectStat, ok := statData.Subjects[subject]; ok {
@@ -176,8 +176,8 @@ func (s *FilterWeigherPipelineStepMonitor[RequestType]) RunWrapped(
 				afterBuilder.WriteString(", ")
 			}
 		}
-		after := afterBuilder.String()
-		traceLog.Info(msg, "before", before, "after", after)
+		// after := afterBuilder.String()
+		// traceLog.Info(msg, "before", before, "after", after)
 	}
 
 	// Calculate the impact for each recorded stat.

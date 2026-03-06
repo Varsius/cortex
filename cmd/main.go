@@ -390,6 +390,7 @@ func main() {
 			os.Exit(1)
 		}
 		scheduler.Logger = ctrl.Log.WithName("pods-scheduler")
+		scheduler.Cache.SetLogger(scheduler.Logger)
 		scheduler.Client = multiclusterClient
 		scheduler.Recorder = mgr.GetEventRecorder("pods-scheduler")
 

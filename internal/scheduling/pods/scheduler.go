@@ -121,12 +121,12 @@ func (scheduler *Scheduler) ScheduleOne(ctx context.Context) {
 		}
 
 		if err := scheduler.schedulePodGroupSet(ctx, pgs); err != nil {
-			scheduler.Logger.Error(err, "failed to schedule podgroupset", "podgroupset", pgs.Name, "namespace", pgs.Namespace)
+			// scheduler.Logger.Error(err, "failed to schedule podgroupset", "podgroupset", pgs.Name, "namespace", pgs.Namespace)
 			if errors.Is(err, errFailedScheduling) {
-				scheduler.Logger.Info("failed scheduling add to unschedulable")
+				scheduler.Logger.Info("failed scheduling add to unschedulable", "podgroupset", pgs.Name)
 				scheduler.Queue.AddUnschedulable(item)
 			} else {
-				scheduler.Logger.Info("failed scheduling add to backoff")
+				scheduler.Logger.Info("failed scheduling add to backoff", "podgroupset", pgs.Name)
 				scheduler.Queue.AddBackoff(item)
 			}
 		} else {

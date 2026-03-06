@@ -6,8 +6,10 @@ package pods
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/cobaltcore-dev/cortex/internal/scheduling/pods/helpers"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -21,13 +23,19 @@ type Cache struct {
 	Topology *Topology
 
 	nodeAllocated map[string]corev1.ResourceList
+	logger        logr.Logger
 }
 
 func NewCache() *Cache {
 	return &Cache{
 		Nodes:         make([]corev1.Node, 0),
 		nodeAllocated: make(map[string]corev1.ResourceList),
+		logger:        logr.Discard(),
 	}
+}
+
+func (c *Cache) SetLogger(logger logr.Logger) {
+	c.logger = logger
 }
 
 func (c *Cache) GetNodes() []corev1.Node {
@@ -65,6 +73,7 @@ func (c *Cache) AddPod(pod *corev1.Pod) {
 
 	c.updateNodeAllocatable(pod.Spec.NodeName)
 
+	c.logger.Info("from addPod")
 	c.updateTopology()
 }
 
@@ -85,6 +94,7 @@ func (c *Cache) RemovePod(pod *corev1.Pod) {
 
 	c.updateNodeAllocatable(pod.Spec.NodeName)
 
+	c.logger.Info("from removePod")
 	c.updateTopology()
 }
 
@@ -97,6 +107,7 @@ func (c *Cache) AddNode(node *corev1.Node) {
 			// Update existing node
 			c.Nodes[i] = *node.DeepCopy()
 			c.updateNodeAllocatable(node.Name)
+			c.logger.Info("from addNode1")
 			c.updateTopology()
 			return
 		}
@@ -109,6 +120,7 @@ func (c *Cache) AddNode(node *corev1.Node) {
 	}
 
 	c.updateNodeAllocatable(node.Name)
+	c.logger.Info("from addNode2")
 	c.updateTopology()
 }
 
@@ -127,6 +139,7 @@ func (c *Cache) RemoveNode(node *corev1.Node) {
 
 	//delete(c.nodeAllocated, node.Name)
 
+	c.logger.Info("from removeNode")
 	c.updateTopology()
 }
 
@@ -156,5 +169,7 @@ func (c *Cache) updateNodeAllocatable(nodeName string) {
 func (c *Cache) updateTopology() {
 	// TODO: rebuilding the topology from scratch on each update is highly inefficient.
 	// Implement behavior to only update the parts that have changed
+	start := time.Now()
 	c.Topology = NewTopology(TopologyLevelNames, c.Nodes)
+	c.logger.Info("building topology completed", "duration", time.Since(start))
 }

@@ -4,6 +4,8 @@
 package helpers
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -37,6 +39,9 @@ func AddResourcesInto(dst, src corev1.ResourceList) {
 	}
 }
 
+// TODO: remove update events for pods and nodes (node add events need to set ready and schedulabe etc)
+// remove error message from binpacking weigher that says no target left after step (which makes no sense??)
+
 // SubtractResourcesInto modifies dst in-place by subtracting the quantity of each resource of src.
 // If a resource doesn't exist in dst, it will be ignored.
 // If subtraction would result in a negative value, the resource is set to zero.
@@ -46,6 +51,7 @@ func SubtractResourcesInto(dst, src corev1.ResourceList) {
 			existing.Sub(qty)
 			// Ensure we don't go negative
 			if existing.Sign() < 0 {
+				fmt.Printf("ERROR: Resource %s went below 0 (negative amount: %s)\n", resource, existing.String())
 				existing.Set(0)
 			}
 			dst[resource] = existing
