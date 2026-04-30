@@ -9,7 +9,7 @@ version: 0.0.1
 appVersion: 0.1.0
 dependencies:
   - name: cortex
-    repository: file://../../library/cortex
+    repository: oci://ghcr.io/cobaltcore-dev/cortex/charts
     version: 0.0.15
 
   # Owner info adds a configmap to the kubernetes cluster with information on
